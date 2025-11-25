@@ -7,6 +7,7 @@ import plotly.express as px
 coords_path = Path('coords_top3.csv')
 axial_codes_path = Path('axial_codes.csv')
 axial_memberships_path = Path('axial_memberships.csv')
+open_codes_path = Path('open_codes_summary.csv')
 gexf_path = Path('qlora_outputs/top3_cooc_clusters.gexf')
 out_html = Path('diagrams/graph_axial_interactive.html')
 
@@ -15,6 +16,7 @@ coords = pd.read_csv(coords_path)
 coords = coords.set_index('node')
 axial_codes = pd.read_csv(axial_codes_path)
 axial_map = pd.read_csv(axial_memberships_path)
+open_codes = pd.read_csv(open_codes_path)
 
 # Map clusters to axial labels
 label_lookup = axial_codes.set_index('axial_id')['axial_label'].to_dict()
@@ -23,6 +25,12 @@ for ax_id, unit_id in axial_map.itertuples(index=False):
     base_comm = int(str(unit_id).split('_')[0])
     cluster_to_label[base_comm] = label_lookup.get(ax_id, f'Axial {ax_id}')
 coords['axial_label'] = coords['hard_comm'].map(cluster_to_label)
+
+# Map open code labels per (cluster, layer)
+open_label_lookup = open_codes.set_index('cluster_id')['code_label'].to_dict()
+coords['open_code'] = coords.apply(
+    lambda r: open_label_lookup.get(f"{int(r['hard_comm'])}_{r['layer']}", ''), axis=1
+)
 
 # Attach degree if available
 graph = nx.read_gexf(gexf_path)
@@ -39,6 +47,7 @@ fig = px.scatter(
         'axial_label': True,
         'hard_comm': True,
         'layer': True,
+        'open_code': True,
         'degree': ':.0f',
         'x': ':.2f',
         'y': ':.2f',
