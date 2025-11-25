@@ -2,6 +2,7 @@ from pathlib import Path
 import pandas as pd
 import networkx as nx
 import plotly.express as px
+import plotly.graph_objects as go
 
 # Paths
 coords_path = Path('coords_top3.csv')
@@ -61,6 +62,25 @@ fig.update_layout(
     legend_title='Axial label',
     margin=dict(l=20, r=20, t=60, b=20),
 )
+
+# Optionally draw transparent edges for context
+edge_x = []
+edge_y = []
+for u, v in graph.edges():
+    if u in coords.index and v in coords.index:
+        edge_x.extend([coords.loc[u, 'x'], coords.loc[v, 'x'], None])
+        edge_y.extend([coords.loc[u, 'y'], coords.loc[v, 'y'], None])
+
+edge_trace = go.Scatter(
+    x=edge_x,
+    y=edge_y,
+    mode='lines',
+    line=dict(color='rgba(0,0,0,0.07)', width=0.5),
+    hoverinfo='skip',
+    showlegend=False,
+)
+
+fig = go.Figure(data=[edge_trace] + list(fig.data), layout=fig.layout)
 
 # Save
 out_html.parent.mkdir(parents=True, exist_ok=True)
