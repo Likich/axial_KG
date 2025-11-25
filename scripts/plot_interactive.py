@@ -82,6 +82,32 @@ edge_trace = go.Scatter(
 
 fig = go.Figure(data=[edge_trace] + list(fig.data), layout=fig.layout)
 
+# Add open-code centroids as small circles for context
+open_centroids = (
+    coords.reset_index()
+    .groupby('open_code')
+    .agg({'x': 'mean', 'y': 'mean'})
+    .reset_index()
+)
+open_centroids = open_centroids[open_centroids['open_code'].astype(bool)]
+if not open_centroids.empty:
+    open_trace = go.Scatter(
+        x=open_centroids['x'],
+        y=open_centroids['y'],
+        mode='markers',
+        marker=dict(
+            symbol='circle-open',
+            size=14,
+            line=dict(color='rgba(50,50,50,0.6)', width=2),
+            color='rgba(255,255,255,0)',
+        ),
+        hovertext=open_centroids['open_code'],
+        hoverinfo='text',
+        name='Open-code centroid',
+        showlegend=True,
+    )
+    fig.add_trace(open_trace)
+
 # Save
 out_html.parent.mkdir(parents=True, exist_ok=True)
 fig.write_html(out_html, include_plotlyjs='cdn')
