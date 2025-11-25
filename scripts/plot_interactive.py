@@ -75,7 +75,7 @@ edge_trace = go.Scatter(
     x=edge_x,
     y=edge_y,
     mode='lines',
-    line=dict(color='rgba(0,0,0,0.07)', width=0.5),
+    line=dict(color='rgba(0,0,0,0.03)', width=0.4),
     hoverinfo='skip',
     showlegend=False,
 )
