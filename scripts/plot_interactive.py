@@ -1,5 +1,6 @@
 from pathlib import Path
 import pandas as pd
+import numpy as np
 import networkx as nx
 import plotly.express as px
 import plotly.graph_objects as go
@@ -82,31 +83,29 @@ edge_trace = go.Scatter(
 
 fig = go.Figure(data=[edge_trace] + list(fig.data), layout=fig.layout)
 
-# Add open-code centroids as small circles for context
-open_centroids = (
-    coords.reset_index()
-    .groupby('open_code')
-    .agg({'x': 'mean', 'y': 'mean'})
-    .reset_index()
-)
-open_centroids = open_centroids[open_centroids['open_code'].astype(bool)]
-if not open_centroids.empty:
-    open_trace = go.Scatter(
-        x=open_centroids['x'],
-        y=open_centroids['y'],
-        mode='markers',
-        marker=dict(
-            symbol='circle-open',
-            size=14,
-            line=dict(color='rgba(50,50,50,0.6)', width=2),
-            color='rgba(255,255,255,0)',
-        ),
-        hovertext=open_centroids['open_code'],
-        hoverinfo='text',
-        name='Open-code centroid',
-        showlegend=True,
+# Add open-code rings around clusters of entities sharing the same open code
+palette = px.colors.qualitative.Pastel
+open_groups = coords.reset_index()
+open_groups = open_groups[open_groups['open_code'].astype(bool)]
+for idx, (oc, grp) in enumerate(open_groups.groupby('open_code')):
+    cx, cy = grp[['x', 'y']].mean()
+    dists = ((grp[['x', 'y']] - [cx, cy])**2).sum(axis=1).pow(0.5)
+    r = max(dists.mean() + dists.std(), 0.15)
+    theta = np.linspace(0, 2 * np.pi, 120)
+    ring_x = cx + r * np.cos(theta)
+    ring_y = cy + r * np.sin(theta)
+    fig.add_trace(
+        go.Scatter(
+            x=ring_x,
+            y=ring_y,
+            mode='lines',
+            line=dict(color=palette[idx % len(palette)], width=2),
+            hoverinfo='text',
+            hovertext=[oc],
+            name=f"Open code: {oc}",
+            showlegend=False,
+        )
     )
-    fig.add_trace(open_trace)
 
 # Save
 out_html.parent.mkdir(parents=True, exist_ok=True)
