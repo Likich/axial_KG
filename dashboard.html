@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Axial / Open / Chunk Explorer</title>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f7f7f9; color: #222; }
+    header { padding: 12px 16px; background: #2c3e50; color: #ecf0f1; }
+    main { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; padding: 12px; }
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); padding: 12px; }
+    .controls { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    select, input { padding: 6px; border-radius: 4px; border: 1px solid #ccc; }
+    .chunk-list { max-height: 70vh; overflow: auto; }
+    .chunk { border-bottom: 1px solid #eee; padding: 8px 0; }
+    .chunk:last-child { border-bottom: none; }
+    .tag { display: inline-block; background: #e9ecef; padding: 2px 6px; border-radius: 4px; margin-right: 4px; font-size: 12px; }
+    .muted { color: #777; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h2>Axial / Open Codes with Chunks</h2>
+    <div style="font-size: 13px; opacity: 0.8;">Hover the treemap to see hierarchy; filter chunks on the right.</div>
+    <div id="debug" style="font-size:12px; opacity:0.7;"></div>
+  </header>
+  <main>
+    <div class="card">
+      <div id="treemap" style="height: 75vh;"></div>
+    </div>
+    <div class="card">
+      <div class="controls">
+        <select id="axialFilter"><option value="">Axial: All</option></select>
+        <select id="openFilter"><option value="">Open: All</option></select>
+        <input id="searchBox" type="text" placeholder="Search chunk text..." />
+      </div>
+      <div class="chunk-list" id="chunkList"></div>
+    </div>
+  </main>
+
+<script>
+const files = {
+  axialCodes: 'axial_codes.csv',
+  axialMap: 'axial_memberships.csv',
+  openSummary: 'open_codes_summary.csv',
+  openSub: 'open_codes_subcodes.csv',
+  chunks: 'Entities_chunk.csv',
+  coords: 'coords_top3.csv',
+};
+
+window.onerror = function(msg, src, line, col, err) {
+  console.error(msg, src, line, col, err);
+  const dbg = document.getElementById('debug');
+  if (dbg) dbg.textContent = `Error: ${msg} at ${line}:${col}`;
+};
+
+function loadCSV(path) {
+  return new Promise((resolve, reject) => {
+    Papa.parse(path, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: true,
+      complete: (res) => resolve(res.data),
+      error: reject,
+    });
+  });
+}
+
+function buildTreemap(rows) {
+  if (!rows || !rows.labels || rows.labels.length <= 1) {
+    document.getElementById('treemap').innerHTML = '<div style="padding:16px; color:#555;">No data to display (no chunks mapped).</div>';
+    return;
+  }
+  try {
+    const fig = {
+      type: 'treemap',
+      labels: rows.labels,
+      parents: rows.parents,
+      ids: rows.ids,
+      values: rows.values,
+      textinfo: 'label',
+      hovertext: rows.hover,
+      hoverinfo: 'text',
+      marker: { colors: rows.colors },
+      branchvalues: 'total',
+      root: { color: '#e5e7eb' },
+    };
+    Plotly.newPlot('treemap', [fig], {
+      title: 'Axial → Open → Chunk hierarchy',
+      margin: { l: 4, r: 4, t: 30, b: 4 },
+    }, { displaylogo: false, responsive: true });
+  } catch (e) {
+    console.error('Plotly treemap error', e);
+    document.getElementById('treemap').innerHTML = '<div style="padding:16px; color:#555;">Error building treemap: ' + e + '</div>';
+  }
+}
+
+function computeColors(keys) {
+  const palette = ['#5aa9e6','#f97306','#9b59b6','#2ecc71','#e74c3c','#f1c40f','#1abc9c','#e67e22','#34495e','#7f8c8d'];
+  const map = {};
+  keys.forEach((k,i)=>{ if(!map[k]) map[k]=palette[i%palette.length]; });
+  return map;
+}
+
+function buildTreeData(chunks) {
+  const ids = ['root'];
+  const labels = ['Codes'];
+  const parents = [''];
+  const values = [0];
+  const hover = ['Axial → Open → Chunk'];
+  const colors = ['#e5e7eb'];
+  const colorMap = computeColors(Array.from(new Set(chunks.map(c=>c.axial))));
+
+  const nodeIndex = { 'root': 0 };
+
+  function ensureNode(key, label, parentKey, color, hoverText) {
+    if (nodeIndex[key] !== undefined) return nodeIndex[key];
+    ids.push(key);
+    labels.push(label);
+    parents.push(parentKey);
+    values.push(0);
+    hover.push(hoverText || label);
+    colors.push(color);
+    nodeIndex[key] = ids.length - 1;
+    return nodeIndex[key];
+  }
+
+  chunks.forEach(item => {
+    const axial = item.axial || 'Unmapped';
+    const open = item.open || 'Unmapped';
+    const chunkText = (item.chunk || '').replace(/\n/g,' ');
+    const chunkLabel = chunkText.length > 60 ? chunkText.slice(0,57)+'...' : chunkText;
+    const axialKey = `ax::${axial}`;
+    const openKey = `op::${axial}::${open}`;
+    const chunkKey = `ch::${chunkLabel}::${axial}::${open}`;
+
+    ensureNode(axialKey, axial, 'root', colorMap[axial] || '#95a5a6', axial);
+    ensureNode(openKey, open, axialKey, colorMap[axial] || '#95a5a6', `${axial} → ${open}`);
+
+    ids.push(chunkKey);
+    labels.push(chunkLabel || '(chunk)');
+    parents.push(openKey);
+    values.push((item.entities || []).length || 1);
+    hover.push(`<b>${axial} → ${open}</b><br>${chunkText}`);
+    colors.push('#d1d5db');
+    nodeIndex[chunkKey] = ids.length - 1;
+  });
+  return { ids, labels, parents, values, hover, colors };
+}
+
+function renderChunks(list, axialFilter, openFilter, search) {
+  const container = document.getElementById('chunkList');
+  container.innerHTML = '';
+  list.forEach(item => {
+    if(axialFilter && item.axial !== axialFilter) return;
+    if(openFilter && item.open !== openFilter) return;
+    if(search && !item.chunk.toLowerCase().includes(search.toLowerCase())) return;
+    const div = document.createElement('div');
+    div.className = 'chunk';
+    div.innerHTML = `
+      <div><span class="tag">${item.axial}</span><span class="tag">${item.open}</span></div>
+      <div style="margin:4px 0; font-weight:600;">${item.chunkShort}</div>
+      <div class="muted">${item.entities.length ? 'Entities: ' + item.entities.join(', ') : 'No matched entities'}</div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+(async function init(){
+  const axialCodes = await loadCSV(files.axialCodes);
+  const axialMap = await loadCSV(files.axialMap);
+  const openSummary = await loadCSV(files.openSummary);
+  const chunks = await loadCSV(files.chunks);
+  const coords = await loadCSV(files.coords);
+
+  const axialLookup = axialCodes.reduce((acc,r)=>{acc[r.axial_id]=r.axial_label; return acc;},{});
+  const baseAxial = {};
+  axialMap.forEach(r=>{
+    const base = String(r.cluster_id).split('_')[0];
+    baseAxial[base] = axialLookup[r.axial_id] || 'Unmapped';
+  });
+  const openLookupFull = openSummary.reduce((acc,r)=>{ acc[r.cluster_id]=r.code_label; return acc; },{});
+
+  // helper: map a chunk to axial/open via entity overlap in coords
+  const coordsIdx = new Map();
+  coords.forEach(c=>{ coordsIdx.set(c.node, c); });
+  function mapChunk(r) {
+    const ents = (r.entities_grounded || '').replace(/\[|\]|'/g,'').split(',').map(s=>s.trim()).filter(Boolean);
+    const matched = ents.map(e=>coordsIdx.get(e)).filter(Boolean);
+    let axial = 'Unmapped';
+    let open = 'Unmapped';
+    if (matched.length) {
+      // pick the most frequent (hard_comm, layer)
+      const combos = matched.map(m=>`${m.hard_comm}_${m.layer}`);
+      const modeCombo = combos.sort((a,b)=>combos.filter(v=>v===a).length - combos.filter(v=>v===b).length).pop();
+      const [hc, layer] = modeCombo.split('_');
+      axial = baseAxial[hc] || 'Unmapped';
+      open = openLookupFull[`${hc}_${layer}`] || openLookupFull[hc] || 'Unmapped';
+    }
+    const chunkText = (r.chunk || '').replace(/\n/g,' ');
+    return {
+      axial,
+      open,
+      chunk: chunkText,
+      chunkShort: chunkText.length>120 ? chunkText.slice(0,117)+'...' : chunkText,
+      entities: (r.entities_grounded || '').replace(/\[|\]|'/g,'').split(',').map(s=>s.trim()).filter(Boolean),
+      raw: r,
+    };
+  }
+
+  let chunkList = chunks.map(mapChunk);
+  const limit = 400;
+  if (chunkList.length > limit) {
+    chunkList = chunkList.slice(0, limit);
+    const note = document.getElementById('debug');
+    if (note) note.textContent += ` | Showing first ${limit} chunks of ${chunks.length}`;
+  }
+  const dbg = `Loaded axial ${axialCodes.length}, memberships ${axialMap.length}, open ${openSummary.length}, chunks ${chunkList.length}, coords ${coords.length}`;
+  console.log(dbg);
+  const dbgEl = document.getElementById('debug');
+  if (dbgEl) dbgEl.textContent = dbg;
+  console.log('Chunk sample', chunkList.slice(0,3));
+  if (!chunkList.length) {
+    document.getElementById('treemap').innerHTML = '<div style="padding:16px; color:#555;">No chunks loaded.</div>';
+    return;
+  }
+
+  const treeData = buildTreeData(chunkList);
+  console.log('Treemap nodes', treeData.labels.length);
+  buildTreemap(treeData);
+
+  // populate filters
+  const axSel = document.getElementById('axialFilter');
+  Array.from(new Set(chunkList.map(c=>c.axial))).filter(Boolean).forEach(a=>{
+    const opt=document.createElement('option'); opt.value=a; opt.textContent=a; axSel.appendChild(opt);
+  });
+  const opSel = document.getElementById('openFilter');
+  Array.from(new Set(chunkList.map(c=>c.open))).filter(Boolean).forEach(o=>{
+    const opt=document.createElement('option'); opt.value=o; opt.textContent=o; opSel.appendChild(opt);
+  });
+
+  const render = ()=>{
+    renderChunks(chunkList, axSel.value, opSel.value, document.getElementById('searchBox').value);
+  };
+  axSel.onchange = render;
+  opSel.onchange = render;
+  document.getElementById('searchBox').oninput = render;
+  render();
+})();
+</script>
+</body>
+</html>

@@ -68,6 +68,8 @@ for _, row in chunks.iterrows():
     )
 
 hier_df = pd.DataFrame(rows)
+hier_df['open_code'] = hier_df['open_code'].fillna('Unmapped')
+hier_df['axial'] = hier_df['axial'].fillna('Unmapped')
 
 fig = px.treemap(
     hier_df,
@@ -81,6 +83,10 @@ fig.update_traces(root_color="lightgray")
 fig.update_layout(
     title="Axial → Open → Chunk (entities) Treemap",
     margin=dict(l=10, r=10, t=40, b=10),
+)
+fig.update_traces(
+    hovertemplate="<b>%{label}</b><br>%{customdata[0]}",
+    customdata=hier_df[["hover"]],
 )
 
 out_html.parent.mkdir(parents=True, exist_ok=True)
